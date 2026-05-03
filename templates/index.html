@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CricAI — Live Hinglish Commentary</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+:root {
+  --bg: #050A08;
+  --surface: #0C1410;
+  --surface2: #111C16;
+  --border: #1A2E20;
+  --border2: #243D2C;
+  --green: #00E676;
+  --green2: #69F0AE;
+  --orange: #FF6D00;
+  --cyan: #00E5FF;
+  --red: #FF1744;
+  --text: #E8F5E9;
+  --muted: #4A7A56;
+  --muted2: #2E5238;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Stadium atmosphere background */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 40% at 50% 100%, rgba(0,230,118,0.04) 0%, transparent 70%),
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 100% 100%, 50px 50px, 50px 50px;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.wrap {
+  position: relative;
+  z-index: 1;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 20px 16px 40px;
+}
+
+/* ── HEADER ── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.logo {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.logo-text {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 3rem;
+  letter-spacing: 4px;
+  background: linear-gradient(135deg, var(--green), var(--cyan));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1;
+}
+
+.logo-sub {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--border2);
+  padding: 3px 8px;
+  border-radius: 3px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.live-badge {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(255,23,68,0.12);
+  border: 1px solid rgba(255,23,68,0.35);
+  color: var(--red);
+  font-family: 'DM Mono', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 2px;
+  padding: 6px 12px;
+  border-radius: 4px;
+}
+
+.live-dot {
+  width: 7px; height: 7px;
+  background: var(--red);
+  border-radius: 50%;
+  animation: blink 1s infinite;
+}
+
+.devices-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0,230,118,0.08);
+  border: 1px solid var(--border2);
+  color: var(--green2);
+  font-family: 'DM Mono', monospace;
+  font-size: 0.65rem;
+  letter-spacing: 1px;
+  padding: 6px 12px;
+  border-radius: 4px;
+}
+
+/* ── TABS ── */
+.tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+  margin-bottom: 20px;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 10px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 7px;
+  transition: all 0.2s;
+  letter-spacing: 0.5px;
+}
+
+.tab-btn.active {
+  background: var(--surface2);
+  color: var(--green);
+  border: 1px solid var(--border2);
+}
+
+/* ── PANELS ── */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  font-family: 'DM Mono', monospace;
+  font-size: 0.62rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── LIVE CAMERA TAB ── */
+#liveTab { display: block; }
+#uploadTab { display: none; }
+
+.cam-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+@media(max-width: 620px) { .cam-grid { grid-template-columns: 1fr; } }
+
+.cam-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+}
+
+video {
+  width: 100%;
+  aspect-ratio: 16/9;
+  object-fit: cover;
+  background: #000;
+  display: block;
+}
+
+canvas { display: none; }
+
+.scan-line {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--green), transparent);
+  opacity: 0;
+  animation: scan 2.5s linear infinite;
+  transition: opacity 0.3s;
+}
+
+.scanning .scan-line { opacity: 1; }
+
+@keyframes scan {
+  0% { transform: translateY(0); bottom: 0; }
+  100% { transform: translateY(-180px); }
+}
+
+.ctrl-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.btn-main {
+  margin: 14px;
+  padding: 13px;
+  border: none;
+  border-radius: 8px;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.25rem;
+  letter-spacing: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: linear-gradient(135deg, var(--green), #00a854);
+  color: #000;
+}
+
+.btn-main:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.btn-main.stop { background: linear-gradient(135deg, var(--red), #b71c1c); color: #fff; }
+
+.ctrl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 0.7rem;
+  color: var(--muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.ctrl-row select {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 0.78rem;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 0.7rem;
+  color: var(--muted);
+  letter-spacing: 1px;
+}
+
+.toggle { position: relative; width: 38px; height: 20px; flex-shrink: 0; }
+.toggle input { display: none; }
+.toggle-slider {
+  position: absolute; inset: 0;
+  background: var(--muted2);
+  border-radius: 20px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 14px; height: 14px;
+  left: 3px; top: 3px;
+  background: var(--muted);
+  border-radius: 50%;
+  transition: 0.2s;
+}
+.toggle input:checked + .toggle-slider { background: var(--green); }
+.toggle input:checked + .toggle-slider::before { transform: translateX(18px); background: #000; }
+
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+}
+
+.stat-box { background: var(--surface); padding: 12px 8px; text-align: center; }
+.stat-val {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.7rem;
+  color: var(--green);
+  line-height: 1;
+}
+.stat-lbl { font-size: 0.55rem; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-top: 2px; }
+
+/* ── COMMENTARY DISPLAY ── */
+.commentary-box {
+  padding: 20px 24px;
+  min-height: 110px;
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.accent-line {
+  position: absolute;
+  left: 0; top: 14px; bottom: 14px;
+  width: 3px;
+  background: linear-gradient(180deg, var(--green), var(--cyan));
+  border-radius: 3px;
+}
+
+.commentary-main {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.55rem;
+  line-height: 1.3;
+  letter-spacing: 1px;
+  transition: all 0.3s;
+  padding-left: 4px;
+}
+
+.commentary-main.placeholder { font-family: 'DM Sans', sans-serif; font-size: 0.9rem; color: var(--muted); font-style: italic; font-weight: 400; }
+.commentary-main.pop { animation: pop-in 0.35s ease; }
+
+@keyframes pop-in {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.waveform {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 12px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  flex-shrink: 0;
+}
+.waveform.on { opacity: 1; }
+.wbar {
+  width: 3px; background: var(--green); border-radius: 3px;
+  animation: wav 0.7s ease-in-out infinite;
+}
+.wbar:nth-child(1){height:6px;animation-delay:0s}
+.wbar:nth-child(2){height:14px;animation-delay:0.1s}
+.wbar:nth-child(3){height:10px;animation-delay:0.2s}
+.wbar:nth-child(4){height:18px;animation-delay:0.15s}
+.wbar:nth-child(5){height:8px;animation-delay:0.05s}
+@keyframes wav { 0%,100%{transform:scaleY(0.3)} 50%{transform:scaleY(1)} }
+
+/* ── DESCRIPTION BOX ── */
+.desc-box {
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-style: italic;
+  line-height: 1.5;
+  min-height: 36px;
+}
+
+/* ── HISTORY ── */
+.history-list {
+  max-height: 180px;
+  overflow-y: auto;
+}
+.history-list::-webkit-scrollbar { width: 3px; }
+.history-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+.h-item {
+  display: flex;
+  gap: 12px;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--border);
+  animation: slide-r 0.3s ease;
+}
+@keyframes slide-r { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:translateX(0)} }
+
+.h-time { font-family:'DM Mono',monospace; font-size:0.6rem; color:var(--orange); white-space:nowrap; padding-top:2px; }
+.h-text { font-size:0.8rem; color:var(--muted); line-height:1.4; }
+.h-empty { text-align:center; padding:24px; color:var(--muted); font-size:0.8rem; font-style:italic; }
+
+/* ── VIDEO UPLOAD TAB ── */
+.drop-zone {
+  margin: 16px;
+  border: 2px dashed var(--border2);
+  border-radius: 10px;
+  padding: 40px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+.drop-zone:hover, .drop-zone.drag { border-color: var(--green); background: rgba(0,230,118,0.04); }
+.drop-icon { font-size: 2.5rem; margin-bottom: 12px; }
+.drop-title { font-family: 'Bebas Neue', sans-serif; font-size: 1.4rem; letter-spacing: 2px; color: var(--green); margin-bottom: 6px; }
+.drop-sub { font-size: 0.78rem; color: var(--muted); }
+.drop-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+
+.upload-btn {
+  display: block;
+  margin: 0 16px 16px;
+  padding: 12px;
+  background: linear-gradient(135deg, var(--green), #00a854);
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.1rem;
+  letter-spacing: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: none;
+}
+.upload-btn:hover { filter: brightness(1.1); }
+.upload-btn.visible { display: block; }
+
+.file-info {
+  margin: 0 16px 12px;
+  padding: 10px 14px;
+  background: rgba(0,230,118,0.06);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: var(--green2);
+  display: none;
+  align-items: center;
+  gap: 8px;
+}
+.file-info.visible { display: flex; }
+
+/* Progress */
+.progress-wrap {
+  margin: 0 16px 16px;
+  display: none;
+}
+.progress-wrap.visible { display: block; }
+.progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--muted);
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+.progress-bar-bg {
+  height: 6px;
+  background: var(--border2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--green), var(--cyan));
+  border-radius: 6px;
+  transition: width 0.4s ease;
+}
+
+/* Video commentary log */
+.vid-commentary-list {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+.vid-commentary-list::-webkit-scrollbar { width: 3px; }
+.vid-commentary-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+.vc-item {
+  display: flex;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  animation: slide-r 0.3s ease;
+}
+.vc-ts {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--cyan);
+  white-space: nowrap;
+  padding-top: 2px;
+  min-width: 36px;
+}
+.vc-text { font-size: 0.82rem; color: var(--text); line-height: 1.4; }
+
+/* ── STATUS BAR ── */
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.6rem;
+  color: var(--muted);
+  letter-spacing: 1px;
+}
+
+.s-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 6px; background: var(--muted); transition: background 0.3s; }
+.s-dot.ok { background: var(--green); }
+.s-dot.busy { background: var(--orange); animation: blink 0.7s infinite; }
+
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* AI thinking spinner */
+.thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  color: var(--orange);
+  font-family: 'DM Mono', monospace;
+  padding: 4px 10px;
+  background: rgba(255,109,0,0.08);
+  border: 1px solid rgba(255,109,0,0.2);
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.thinking.on { opacity: 1; }
+.think-dot {
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: var(--orange);
+  animation: bounce 0.6s infinite;
+}
+.think-dot:nth-child(2){animation-delay:0.15s}
+.think-dot:nth-child(3){animation-delay:0.3s}
+@keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="logo">
+      <div class="logo-text">CricAI</div>
+      <div class="logo-sub">Hinglish Commentary</div>
+    </div>
+    <div class="header-right">
+      <span class="thinking" id="thinkBadge">
+        <span class="think-dot"></span>
+        <span class="think-dot"></span>
+        <span class="think-dot"></span>
+        AI Thinking
+      </span>
+      <div class="devices-pill">📱 <span id="devCount">1</span> devices</div>
+      <div class="live-badge"><div class="live-dot"></div>LIVE</div>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('live', this)">🎥 Live Camera</button>
+    <button class="tab-btn" onclick="switchTab('upload', this)">📁 Upload Video</button>
+  </div>
+
+  <!-- ════════════ LIVE CAMERA TAB ════════════ -->
+  <div id="liveTab">
+
+    <div class="cam-grid">
+      <!-- Camera feed -->
+      <div class="cam-panel" id="camPanel">
+        <div class="panel-header">
+          <span>📷 Camera Feed</span>
+          <span id="camStatus" style="color:var(--orange)">STANDBY</span>
+        </div>
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="canvas"></canvas>
+        <div class="scan-line"></div>
+      </div>
+
+      <!-- Controls -->
+      <div class="ctrl-panel">
+        <div class="panel-header"><span>⚙️ Controls</span></div>
+
+        <button class="btn-main" id="startBtn" onclick="toggleLive()">▶ START COMMENTARY</button>
+
+        <div class="ctrl-row">
+          <span>Every</span>
+          <select id="intervalSel">
+            <option value="3000">3 sec</option>
+            <option value="5000" selected>5 sec</option>
+            <option value="8000">8 sec</option>
+          </select>
+        </div>
+
+        <div class="toggle-row">
+          <label class="toggle">
+            <input type="checkbox" id="voiceToggle" checked>
+            <div class="toggle-slider"></div>
+          </label>
+          Voice Commentary (TTS)
+        </div>
+
+        <div class="stats-row">
+          <div class="stat-box">
+            <div class="stat-val" id="sCom">0</div>
+            <div class="stat-lbl">Lines</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" id="sDev" style="color:var(--green2)">1</div>
+            <div class="stat-lbl">Devices</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" id="sTime">0:00</div>
+            <div class="stat-lbl">On Air</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" id="sAI" style="font-size:1.1rem;padding-top:8px">💤</div>
+            <div class="stat-lbl">AI</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Commentary display -->
+    <div class="panel" style="margin-bottom:16px">
+      <div class="panel-header">
+        <span>🎙️ Current Commentary</span>
+        <div class="waveform" id="wave">
+          <div class="wbar"></div><div class="wbar"></div>
+          <div class="wbar"></div><div class="wbar"></div>
+          <div class="wbar"></div>
+        </div>
+      </div>
+      <div class="commentary-box">
+        <div class="accent-line"></div>
+        <div class="commentary-main placeholder" id="comText">
+          Point camera at the match and hit START...
+        </div>
+      </div>
+      <div class="desc-box" id="descText">Gemini scene description will appear here</div>
+    </div>
+
+    <!-- History -->
+    <div class="panel">
+      <div class="panel-header">
+        <span>📋 Commentary Log</span>
+        <span id="logCount" style="color:var(--orange)">0 lines</span>
+      </div>
+      <div class="history-list" id="historyList">
+        <div class="h-empty">Commentary history will appear here...</div>
+      </div>
+    </div>
+
+  </div><!-- end liveTab -->
+
+  <!-- ════════════ VIDEO UPLOAD TAB ════════════ -->
+  <div id="uploadTab">
+
+    <div class="panel" style="margin-bottom:16px">
+      <div class="panel-header"><span>📁 Upload Cricket Video</span></div>
+
+      <div class="drop-zone" id="dropZone">
+        <input type="file" class="drop-input" id="videoInput" accept="video/mp4,video/mov,video/avi,video/mkv,video/webm" onchange="onFileSelect(this)">
+        <div class="drop-icon">🏏</div>
+        <div class="drop-title">Drop Video Here</div>
+        <div class="drop-sub">MP4, MOV, AVI, MKV supported · Max 200MB</div>
+      </div>
+
+      <div class="file-info" id="fileInfo">
+        <span>🎬</span>
+        <span id="fileName">No file</span>
+      </div>
+
+      <div class="progress-wrap" id="progressWrap">
+        <div class="progress-label">
+          <span id="progressText">Analyzing frame 0 of 0...</span>
+          <span id="progressPct">0%</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="progressFill"></div>
+        </div>
+      </div>
+
+      <button class="upload-btn" id="uploadBtn" onclick="startUpload()">🚀 START AI COMMENTARY</button>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span>🎙️ Video Commentary</span>
+        <span id="vidCount" style="color:var(--orange)">0 lines</span>
+      </div>
+      <div class="vid-commentary-list" id="vidList">
+        <div class="h-empty">Upload a video to generate Hinglish commentary...</div>
+      </div>
+    </div>
+
+  </div><!-- end uploadTab -->
+
+  <!-- STATUS BAR -->
+  <div class="status-bar">
+    <div>
+      <span class="s-dot" id="sockDot"></span>
+      <span id="sockStatus">Connecting...</span>
+    </div>
+    <span>Share URL on same WiFi for multi-device sync</span>
+    <div>
+      <span class="s-dot" id="aiDot"></span>
+      <span id="aiStatus">AI Ready</span>
+    </div>
+  </div>
+
+</div><!-- end wrap -->
+
+<script>
+// ── Socket.io ────────────────────────────────────────────────────────────────
+const socket = io();
+let commentCount = 0;
+let vidComCount = 0;
+let isLive = false;
+let liveInterval = null;
+let liveTimer = null;
+let liveStart = null;
+let stream = null;
+let selectedFile = null;
+let vidCommentaries = [];
+
+socket.on('connect', () => {
+  document.getElementById('sockDot').classList.add('ok');
+  document.getElementById('sockStatus').textContent = 'Server Connected';
+});
+
+socket.on('disconnect', () => {
+  document.getElementById('sockDot').classList.remove('ok');
+  document.getElementById('sockStatus').textContent = 'Disconnected';
+});
+
+socket.on('client_count', (d) => {
+  document.getElementById('devCount').textContent = d.count;
+  document.getElementById('sDev').textContent = d.count;
+});
+
+// Live commentary received
+socket.on('new_commentary', (d) => {
+  showCommentary(d.text, d.description);
+  commentCount++;
+  document.getElementById('sCom').textContent = commentCount;
+  document.getElementById('logCount').textContent = commentCount + ' lines';
+  addHistory(d.text);
+  if (document.getElementById('voiceToggle').checked) speak(d.text);
+  document.getElementById('sAI').textContent = '✅';
+  document.getElementById('aiDot').style.background = 'var(--green)';
+  setThinking(false);
+});
+
+// Video events
+socket.on('video_start', (d) => {
+  document.getElementById('progressWrap').classList.add('visible');
+  document.getElementById('vidList').innerHTML = '';
+  vidComCount = 0;
+  vidCommentaries = [];
+});
+
+socket.on('video_progress', (d) => {
+  const pct = Math.round((d.current / d.total) * 100);
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressText').textContent = `Analyzing frame ${d.current} of ${d.total}... (${d.timestamp})`;
+  document.getElementById('progressPct').textContent = pct + '%';
+});
+
+socket.on('video_commentary', (d) => {
+  vidCommentaries.push(d);
+  addVidCommentary(d);
+  vidComCount++;
+  document.getElementById('vidCount').textContent = vidComCount + ' lines';
+});
+
+socket.on('video_complete', (d) => {
+  document.getElementById('progressText').textContent = `Done! ${d.total} commentary lines generated`;
+  document.getElementById('progressFill').style.width = '100%';
+  document.getElementById('progressPct').textContent = '100%';
+  document.getElementById('uploadBtn').textContent = '▶ PLAY COMMENTARY';
+  document.getElementById('uploadBtn').onclick = playVidCommentary;
+
+  // Auto-play after small delay
+  setTimeout(playVidCommentary, 1000);
+});
+
+socket.on('video_error', (d) => {
+  document.getElementById('progressText').textContent = 'Error: ' + d.error;
+});
+
+// ── Tab switching ────────────────────────────────────────────────────────────
+function switchTab(tab, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('liveTab').style.display = tab === 'live' ? 'block' : 'none';
+  document.getElementById('uploadTab').style.display = tab === 'upload' ? 'block' : 'none';
+}
+
+// ── Camera ───────────────────────────────────────────────────────────────────
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: 640, height: 360 }, audio: false
+    });
+  } catch {
+    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  }
+  document.getElementById('video').srcObject = stream;
+}
+
+// ── Live Commentary ──────────────────────────────────────────────────────────
+async function toggleLive() {
+  if (!isLive) {
+    if (!stream) await startCamera();
+    isLive = true;
+    const btn = document.getElementById('startBtn');
+    btn.textContent = '⏹ STOP COMMENTARY';
+    btn.classList.add('stop');
+    document.getElementById('camPanel').classList.add('scanning');
+    document.getElementById('camStatus').textContent = 'CAPTURING';
+
+    liveStart = Date.now();
+    liveTimer = setInterval(() => {
+      const s = Math.floor((Date.now() - liveStart) / 1000);
+      document.getElementById('sTime').textContent = `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`;
+    }, 1000);
+
+    captureFrame();
+    const ms = parseInt(document.getElementById('intervalSel').value);
+    liveInterval = setInterval(captureFrame, ms);
+  } else {
+    isLive = false;
+    clearInterval(liveInterval);
+    clearInterval(liveTimer);
+    const btn = document.getElementById('startBtn');
+    btn.textContent = '▶ START COMMENTARY';
+    btn.classList.remove('stop');
+    document.getElementById('camPanel').classList.remove('scanning');
+    document.getElementById('camStatus').textContent = 'STANDBY';
+    document.getElementById('sAI').textContent = '💤';
+    window.speechSynthesis?.cancel();
+    document.getElementById('wave').classList.remove('on');
+    setThinking(false);
+  }
+}
+
+async function captureFrame() {
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 360;
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+  const b64 = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+
+  document.getElementById('sAI').textContent = '🤔';
+  document.getElementById('aiDot').style.background = 'var(--orange)';
+  setThinking(true);
+
+  try {
+    await fetch('/commentary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: b64 })
+    });
+  } catch (e) {
+    document.getElementById('sAI').textContent = '❌';
+    setThinking(false);
+  }
+}
+
+// ── Commentary Display ────────────────────────────────────────────────────────
+function showCommentary(text, desc) {
+  const el = document.getElementById('comText');
+  el.textContent = text;
+  el.classList.remove('placeholder', 'pop');
+  void el.offsetWidth;
+  el.classList.add('pop');
+  if (desc) document.getElementById('descText').textContent = '👁️ Gemini sees: ' + desc;
+}
+
+function addHistory(text) {
+  const list = document.getElementById('historyList');
+  const empty = list.querySelector('.h-empty');
+  if (empty) empty.remove();
+  const t = new Date().toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  const div = document.createElement('div');
+  div.className = 'h-item';
+  div.innerHTML = `<span class="h-time">${t}</span><span class="h-text">${text}</span>`;
+  list.insertBefore(div, list.firstChild);
+  while (list.children.length > 25) list.removeChild(list.lastChild);
+}
+
+function addVidCommentary(d) {
+  const list = document.getElementById('vidList');
+  const empty = list.querySelector('.h-empty');
+  if (empty) empty.remove();
+  const div = document.createElement('div');
+  div.className = 'vc-item';
+  div.innerHTML = `<span class="vc-ts">${d.timestamp}</span><span class="vc-text">${d.commentary}</span>`;
+  list.appendChild(div);
+  list.scrollTop = list.scrollHeight;
+}
+
+// ── TTS ───────────────────────────────────────────────────────────────────────
+function speak(text) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1.05; u.pitch = 1.0; u.volume = 1.0;
+  const voices = window.speechSynthesis.getVoices();
+  const v = voices.find(v => v.lang.startsWith('en') && v.name.includes('Google')) ||
+            voices.find(v => v.lang.startsWith('en'));
+  if (v) u.voice = v;
+  u.onstart = () => document.getElementById('wave').classList.add('on');
+  u.onend   = () => document.getElementById('wave').classList.remove('on');
+  window.speechSynthesis.speak(u);
+}
+
+// ── Video Upload ─────────────────────────────────────────────────────────────
+const dropZone = document.getElementById('dropZone');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file) setFile(file);
+});
+
+function onFileSelect(input) {
+  if (input.files[0]) setFile(input.files[0]);
+}
+
+function setFile(file) {
+  selectedFile = file;
+  document.getElementById('fileName').textContent = `${file.name} (${(file.size/1024/1024).toFixed(1)} MB)`;
+  document.getElementById('fileInfo').classList.add('visible');
+  document.getElementById('uploadBtn').classList.add('visible');
+  document.getElementById('uploadBtn').textContent = '🚀 START AI COMMENTARY';
+  document.getElementById('uploadBtn').onclick = startUpload;
+}
+
+async function startUpload() {
+  if (!selectedFile) return;
+  const formData = new FormData();
+  formData.append('video', selectedFile);
+  document.getElementById('uploadBtn').textContent = '⏳ Uploading...';
+  document.getElementById('uploadBtn').disabled = true;
+
+  try {
+    const res = await fetch('/upload-video', { method: 'POST', body: formData });
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Server error: ${res.status} - ${errorText}`);
+    }
+    const data = await res.json();
+    if (data.error) {
+      alert('Error: ' + data.error);
+      document.getElementById('uploadBtn').disabled = false;
+    } else {
+      document.getElementById('uploadBtn').textContent = '🔄 Processing...';
+    }
+  } catch (e) {
+    alert('Upload failed: ' + e.message);
+    document.getElementById('uploadBtn').disabled = false;
+    document.getElementById('uploadBtn').textContent = '🚀 START AI COMMENTARY';
+  }
+}
+
+// Play video commentary sequentially with TTS
+async function playVidCommentary() {
+  for (const item of vidCommentaries) {
+    speak(item.commentary);
+    await new Promise(r => setTimeout(r, 3500));
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function setThinking(on) {
+  document.getElementById('thinkBadge').classList.toggle('on', on);
+  document.getElementById('aiDot').classList.toggle('busy', on);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  startCamera();
+  window.speechSynthesis?.getVoices();
+});
+</script>
+</body>
+</html>
