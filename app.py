@@ -3,6 +3,7 @@ import base64
 import time
 import tempfile
 import threading
+import hashlib
 import cv2
 from dotenv import load_dotenv
 import google.generativeai as genai
@@ -34,8 +35,9 @@ stats = {
     "comments_generated": 0,
     "connected_clients": 0
 }
-recent_commentaries = []  # Track last 10 lines to avoid repetition
-
+recent_commentaries = []  # Track last 10 lines to avoid repetitionrecent_descriptions = []  # Track descriptions to detect duplicate frames
+last_frame_hash = None  # Detect if we're looking at the same static frame
+description_commentaries = {}  # Cache: description -> list of varied commentaries
 # ── Prompts ─────────────────────────────────────────────────────────────────
 GEMINI_VISION_PROMPT = """Look at this cricket match image carefully.
 Describe in 2-3 sentences ONLY what you see:
@@ -78,44 +80,70 @@ def get_gemini_description(image_bytes):
 
 
 def get_claude_commentary(description):
-    """Step 2: Claude turns description into Hinglish commentary"""
-    global recent_commentaries
+    """Step 2: Claude turns description into Hinglish commentary - generates 3 variations"""
+    global recent_commentaries, description_commentaries
+    
+    # Check if we have cached varied commentaries for this description
+    if description in description_commentaries:
+        cache = description_commentaries[description]
+        # Pick the next one in rotation that isn't in recent list
+        for comment in cache:
+            if comment not in recent_commentaries[-10:]:
+                recent_commentaries.append(comment)
+                if len(recent_commentaries) > 20:
+                    recent_commentaries.pop(0)
+                return comment
+        # If all are recent, just return a new one anyway
+        return cache[0]
     
     try:
-        recent_text = "\n".join([f"- {c}" for c in recent_commentaries[-5:]]) if recent_commentaries else "None yet"
+        recent_text = "\n".join([f"- {c}" for c in recent_commentaries[-8:]]) if recent_commentaries else "None yet"
         
         message = claude_client.messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=150,
+            max_tokens=300,
             system=CLAUDE_HINGLISH_PROMPT,
             messages=[
                 {"role": "user", "content": f"""Cricket scene: {description}
 
-IMPORTANT: DO NOT repeat any of these recent lines:
+Generate 3 different UNIQUE Hinglish commentary lines. Make them ALL different in tone, energy, and phrasing.
+
+NEVER use ANY of these lines:
 {recent_text}
 
-Generate a FRESH, unique Hinglish commentary line (never seen before):"""}
+Format as:
+1. [first variation]
+2. [second variation]
+3. [third variation]"""}
             ]
         )
-        commentary = message.content[0].text.strip()
+        
+        response_text = message.content[0].text.strip()
+        commentaries = []
+        for line in response_text.split('\n'):
+            line = line.strip()
+            if line and not line[0].isdigit():
+                commentaries.append(line)
+        
+        if not commentaries:
+            commentaries = [response_text]
+        
+        # Cache these variations
+        description_commentaries[description] = commentaries[:3]
+        
+        # Return first one and track it
+        commentary = commentaries[0]
         recent_commentaries.append(commentary)
-        if len(recent_commentaries) > 15:
+        if len(recent_commentaries) > 20:
             recent_commentaries.pop(0)
+        
         return commentary
+    
     except Exception as e:
-        # Fallback to Gemini only
-        try:
-            recent_text = "\n".join([f"- {c}" for c in recent_commentaries[-5:]]) if recent_commentaries else "None"
-            fallback = gemini_model.generate_content(
-                f"{CLAUDE_HINGLISH_PROMPT}\n\nCricket scene: {description}\n\nAvoid these lines:\n{recent_text}\n\nGenerate unique Hinglish commentary:"
-            )
-            commentary = fallback.text.strip()
-            recent_commentaries.append(commentary)
-            if len(recent_commentaries) > 15:
-                recent_commentaries.pop(0)
-            return commentary
-        except:
-            return "Aur khel jaari hai bhai! Match mein tension badhti ja rahi hai!"
+        print(f"Claude error: {e}")
+        # Fallback
+        recent_commentaries.append("Aur khel jaari hai!")
+        return "Aur khel jaari hai!"
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -138,6 +166,7 @@ def health():
 @app.route('/commentary', methods=['POST'])
 def get_commentary():
     """Live camera commentary endpoint"""
+    global last_frame_hash
     data = request.json
     image_data = data.get('image', '')
 
@@ -148,7 +177,15 @@ def get_commentary():
         if ',' in image_data:
             image_data = image_data.split(',')[1]
         image_bytes = base64.b64decode(image_data)
-
+        
+        # Hash frame to detect if it's the same static image
+        frame_hash = hashlib.md5(image_bytes).hexdigest()
+        if frame_hash == last_frame_hash:
+            # Same frame - skip for now to avoid unnecessary API calls
+            return jsonify({'commentary': '', 'description': 'Same frame'}), 200
+        
+        last_frame_hash = frame_hash
+        
         description  = get_gemini_description(image_bytes)
         commentary   = get_claude_commentary(description)
 
@@ -163,6 +200,7 @@ def get_commentary():
         return jsonify({'commentary': commentary, 'description': description})
 
     except Exception as e:
+        print(f"Commentary error: {e}")
         return jsonify({'error': str(e)}), 500
 
 
