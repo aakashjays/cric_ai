@@ -122,7 +122,14 @@ Format as:
         commentaries = []
         for line in response_text.split('\n'):
             line = line.strip()
-            if line and not line[0].isdigit():
+            if not line:
+                continue
+            # Remove leading number and punctuation: "1. text" → "text"
+            if line[0].isdigit():
+                line = line.split('.', 1)[-1].strip()
+                if line:
+                    commentaries.append(line)
+            else:
                 commentaries.append(line)
         
         if not commentaries:
