@@ -34,6 +34,7 @@ stats = {
     "comments_generated": 0,
     "connected_clients": 0
 }
+recent_commentaries = []  # Track last 10 lines to avoid repetition
 
 # ── Prompts ─────────────────────────────────────────────────────────────────
 GEMINI_VISION_PROMPT = """Look at this cricket match image carefully.
@@ -78,23 +79,41 @@ def get_gemini_description(image_bytes):
 
 def get_claude_commentary(description):
     """Step 2: Claude turns description into Hinglish commentary"""
+    global recent_commentaries
+    
     try:
+        recent_text = "\n".join([f"- {c}" for c in recent_commentaries[-5:]]) if recent_commentaries else "None yet"
+        
         message = claude_client.messages.create(
             model="claude-sonnet-4-5",
             max_tokens=150,
             system=CLAUDE_HINGLISH_PROMPT,
             messages=[
-                {"role": "user", "content": f"Cricket scene: {description}\n\nGenerate Hinglish commentary:"}
+                {"role": "user", "content": f"""Cricket scene: {description}
+
+IMPORTANT: DO NOT repeat any of these recent lines:
+{recent_text}
+
+Generate a FRESH, unique Hinglish commentary line (never seen before):"""}
             ]
         )
-        return message.content[0].text.strip()
+        commentary = message.content[0].text.strip()
+        recent_commentaries.append(commentary)
+        if len(recent_commentaries) > 15:
+            recent_commentaries.pop(0)
+        return commentary
     except Exception as e:
         # Fallback to Gemini only
         try:
+            recent_text = "\n".join([f"- {c}" for c in recent_commentaries[-5:]]) if recent_commentaries else "None"
             fallback = gemini_model.generate_content(
-                f"{CLAUDE_HINGLISH_PROMPT}\n\nCricket scene: {description}\nGenerate Hinglish commentary:"
+                f"{CLAUDE_HINGLISH_PROMPT}\n\nCricket scene: {description}\n\nAvoid these lines:\n{recent_text}\n\nGenerate unique Hinglish commentary:"
             )
-            return fallback.text.strip()
+            commentary = fallback.text.strip()
+            recent_commentaries.append(commentary)
+            if len(recent_commentaries) > 15:
+                recent_commentaries.pop(0)
+            return commentary
         except:
             return "Aur khel jaari hai bhai! Match mein tension badhti ja rahi hai!"
 

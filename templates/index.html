@@ -756,6 +756,7 @@ let liveStart = null;
 let stream = null;
 let selectedFile = null;
 let vidCommentaries = [];
+let recentLines = new Set();  // Track last 10 lines to prevent duplicates
 
 socket.on('connect', () => {
   document.getElementById('sockDot').classList.add('ok');
@@ -774,6 +775,17 @@ socket.on('client_count', (d) => {
 
 // Live commentary received
 socket.on('new_commentary', (d) => {
+  if (recentLines.has(d.text)) {
+    console.log('Skipping duplicate commentary:', d.text);
+    return;  // Skip duplicate
+  }
+  
+  recentLines.add(d.text);
+  if (recentLines.size > 12) {
+    const arr = Array.from(recentLines);
+    recentLines.delete(arr[0]);
+  }
+  
   showCommentary(d.text, d.description);
   commentCount++;
   document.getElementById('sCom').textContent = commentCount;
