@@ -4,11 +4,14 @@ import time
 import tempfile
 import threading
 import cv2
+from dotenv import load_dotenv
 import google.generativeai as genai
 import anthropic
 from flask import Flask, request, jsonify, render_template
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
+
+load_dotenv()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'cricai-secret-2026'
