@@ -836,16 +836,30 @@ async function startCamera() {
     stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'environment', width: 640, height: 360 }, audio: false
     });
-  } catch {
-    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  } catch (err) {
+    console.warn('Camera with facingMode failed, trying default:', err);
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    } catch (err2) {
+      console.error('Camera access failed:', err2);
+      alert('Camera access denied or not available. Please allow camera permissions in browser settings.');
+      throw err2;
+    }
   }
-  document.getElementById('video').srcObject = stream;
+  if (stream) {
+    document.getElementById('video').srcObject = stream;
+  }
 }
 
 // ── Live Commentary ──────────────────────────────────────────────────────────
 async function toggleLive() {
   if (!isLive) {
-    if (!stream) await startCamera();
+    try {
+      if (!stream) await startCamera();
+    } catch (err) {
+      console.error('Failed to start camera:', err);
+      return;
+    }
     isLive = true;
     const btn = document.getElementById('startBtn');
     btn.textContent = '⏹ STOP COMMENTARY';
