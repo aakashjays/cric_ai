@@ -74,8 +74,11 @@ def get_gemini_description(image_bytes):
             GEMINI_VISION_PROMPT,
             {"mime_type": "image/jpeg", "data": image_bytes}
         ])
-        return response.text.strip()
+        desc = response.text.strip()
+        print(f"✓ Gemini: {desc[:80]}...")
+        return desc
     except Exception as e:
+        print(f"✗ Gemini error: {e}")
         return f"Cricket match in progress with players on the field"
 
 
@@ -83,17 +86,25 @@ def get_claude_commentary(description):
     """Step 2: Claude turns description into Hinglish commentary - generates 3 variations"""
     global recent_commentaries, description_commentaries
     
+    # Varied fallbacks if APIs fail
+    FALLBACK_LINES = [
+        "Aur khel jaari hai bhai! Match mein tension badhti ja rahi hai!",
+        "Dekho yaar, tension create ho raha hai! Kya hoga aage?",
+        "Wow! Kya shot tha ye! Crowd pagal ho gaya!",
+        "Boundary! Seeda boundary! Kya performance hai!",
+        "Excellent bowling! Batsman ke paas koi jawab nahi!",
+        "Chalo chalo, wicket pad gaya! What a catch!",
+    ]
+    
     # Check if we have cached varied commentaries for this description
     if description in description_commentaries:
         cache = description_commentaries[description]
-        # Pick the next one in rotation that isn't in recent list
         for comment in cache:
             if comment not in recent_commentaries[-10:]:
                 recent_commentaries.append(comment)
                 if len(recent_commentaries) > 20:
                     recent_commentaries.pop(0)
                 return comment
-        # If all are recent, just return a new one anyway
         return cache[0]
     
     try:
@@ -124,7 +135,6 @@ Format as:
             line = line.strip()
             if not line:
                 continue
-            # Remove leading number and punctuation: "1. text" → "text"
             if line[0].isdigit():
                 line = line.split('.', 1)[-1].strip()
                 if line:
@@ -135,22 +145,21 @@ Format as:
         if not commentaries:
             commentaries = [response_text]
         
-        # Cache these variations
         description_commentaries[description] = commentaries[:3]
-        
-        # Return first one and track it
         commentary = commentaries[0]
         recent_commentaries.append(commentary)
         if len(recent_commentaries) > 20:
             recent_commentaries.pop(0)
         
+        print(f"✓ Claude: {commentary[:70]}...")
         return commentary
     
     except Exception as e:
-        print(f"Claude error: {e}")
-        # Fallback
-        recent_commentaries.append("Aur khel jaari hai!")
-        return "Aur khel jaari hai!"
+        print(f"✗ Claude error: {e}")
+        # Use varied fallback instead of same line
+        fallback = FALLBACK_LINES[len(recent_commentaries) % len(FALLBACK_LINES)]
+        recent_commentaries.append(fallback)
+        return fallback
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -188,7 +197,7 @@ def get_commentary():
         # Hash frame to detect if it's the same static image
         frame_hash = hashlib.md5(image_bytes).hexdigest()
         if frame_hash == last_frame_hash:
-            # Same frame - skip for now to avoid unnecessary API calls
+            # Same frame - skip for now
             return jsonify({'commentary': '', 'description': 'Same frame'}), 200
         
         last_frame_hash = frame_hash
@@ -197,6 +206,8 @@ def get_commentary():
         commentary   = get_claude_commentary(description)
 
         stats["comments_generated"] += 1
+        
+        print(f"📺 Live: {commentary}")
 
         socketio.emit('new_commentary', {
             'text': commentary,
@@ -207,7 +218,7 @@ def get_commentary():
         return jsonify({'commentary': commentary, 'description': description})
 
     except Exception as e:
-        print(f"Commentary error: {e}")
+        print(f"❌ Commentary error: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -275,9 +286,12 @@ def upload_video():
                     'timestamp': timestamp_str
                 })
 
+                print(f"\n[{timestamp_str}] Processing frame {processed + 1}/{total_to_process}...")
                 description = get_gemini_description(image_bytes)
                 commentary  = get_claude_commentary(description)
                 stats["comments_generated"] += 1
+                
+                print(f"[{timestamp_str}] Commentary: {commentary}\n")
 
                 result = {
                     'timestamp': timestamp_str,
